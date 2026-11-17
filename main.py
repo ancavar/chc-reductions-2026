@@ -22,11 +22,13 @@ task_N_check(model, <вход>, <выход>) — допускает ли мод
 
 Проверка: python grader.py
 """
+
 from typing import List, Optional
 
 from z3 import *
 
 set_param(proof=True)
+
 
 def solve_horn(chc, timeout_ms: int = 10_000):
     s = SolverFor("HORN")
@@ -53,6 +55,7 @@ def evaluate(expr) -> Optional[bool]:
 ##################################################
 # Пример: доказать, что n <= 100 => mc91(n) = 91
 
+
 def mc91(n: int) -> int:
     if n > 100:
         return n - 10
@@ -67,7 +70,10 @@ def example_chc():
     n, tmp, res = Ints("n tmp res")
     return [
         ForAll([n], Implies(n > 100, Mc91(n, n - 10))),
-        ForAll([n, tmp, res], Implies(And(n <= 100, Mc91(n + 11, tmp), Mc91(tmp, res)), Mc91(n, res))),
+        ForAll(
+            [n, tmp, res],
+            Implies(And(n <= 100, Mc91(n + 11, tmp), Mc91(tmp, res)), Mc91(n, res)),
+        ),
         ForAll([n, res], Implies(And(Mc91(n, res), n <= 100, res != 91), False)),
     ]
 
@@ -80,6 +86,7 @@ def example_check(model, n: int, res: int) -> Optional[bool]:
 # Задача 1 (1 балл). Цикл.
 # Доказать: x >= 0  =>  double(x) = 2 * x
 
+
 def double(x: int) -> int:
     i = 0
     z = 0
@@ -89,17 +96,43 @@ def double(x: int) -> int:
     return z
 
 
+Double = Function("Double", IntSort(), IntSort(), BoolSort())
+DoubleLoop = Function("DoubleLoop", IntSort(), IntSort(), IntSort(), BoolSort())
+
+
 def task_1_chc():
-    return []
+    x, i, z, res = Ints("x i z res")
+    return [
+        ForAll([x], DoubleLoop(x, 0, 0)),
+        ForAll(
+            [x, i, z],
+            Implies(
+                And(DoubleLoop(x, i, z), i < x),
+                DoubleLoop(x, i + 1, z + 2),
+            ),
+        ),
+        ForAll(
+            [x, i, z],
+            Implies(
+                And(DoubleLoop(x, i, z), i >= x),
+                Double(x, z),
+            ),
+        ),
+        ForAll(
+            [x, res],
+            Implies(And(Double(x, res), x >= 0, res != 2 * x), False),
+        ),
+    ]
 
 
 def task_1_check(model, x: int, res: int) -> Optional[bool]:
-    return None
+    return evaluate(model.eval(Double(IntVal(x), IntVal(res))))
 
 
 ##################################################
 # Задача 2 (2 балла). Нелинейная рекурсия.
 # Доказать: m >= 0 and n >= 0  =>  ack(m, n) >= n
+
 
 def ack(m: int, n: int) -> int:
     if m == 0:
@@ -110,12 +143,32 @@ def ack(m: int, n: int) -> int:
         return ack(m - 1, ack(m, n - 1))
 
 
+Ack = Function("Ack", IntSort(), IntSort(), IntSort(), BoolSort())
+
+
 def task_2_chc():
-    return []
+    m, n, res, tmp = Ints("m n res tmp")
+    return [
+        ForAll([m, n], Implies(m == 0, Ack(m, n, n + 1))),
+        ForAll(
+            [m, n, res],
+            Implies(And(m != 0, n == 0, Ack(m - 1, 1, res)), Ack(m, n, res)),
+        ),
+        ForAll(
+            [m, n, res, tmp],
+            Implies(
+                And(m != 0, n != 0, Ack(m, n - 1, tmp), Ack(m - 1, tmp, res)),
+                Ack(m, n, res),
+            ),
+        ),
+        ForAll(
+            [m, n, res], Implies(And(m >= 0, n >= 0, Ack(m, n, res), res < n), False)
+        ),
+    ]
 
 
 def task_2_check(model, m: int, n: int, res: int) -> Optional[bool]:
-    return None
+    return evaluate(model.eval(Ack(IntVal(m), IntVal(n), IntVal(res))))
 
 
 ##################################################
@@ -125,6 +178,7 @@ def task_2_check(model, m: int, n: int, res: int) -> Optional[bool]:
 #
 # Подсказка: список можно представить массивом Z3 и длиной.
 
+
 def search_in_array(array: List[int], value: int) -> int:
     for i in range(0, len(array)):
         if array[i] == value:
@@ -132,12 +186,72 @@ def search_in_array(array: List[int], value: int) -> int:
     return -1
 
 
+SearchArray = Function(
+    "SearchArray",
+    ArraySort(IntSort(), IntSort()),
+    IntSort(),
+    IntSort(),
+    IntSort(),
+    BoolSort(),
+)
+
+SearchArrayLoop = Function(
+    "SearchArrayLoop",
+    ArraySort(IntSort(), IntSort()),
+    IntSort(),
+    IntSort(),
+    IntSort(),
+    BoolSort(),
+)
+
+
 def task_3_chc():
-    return []
+    array = Array("array", IntSort(), IntSort())
+    value, res, i, n = Ints("value res i n")
+    return [
+        ForAll([array, n, value], Implies(n >= 0, SearchArrayLoop(array, n, value, 0))),
+        ForAll(
+            [array, n, value, i],
+            Implies(
+                And(SearchArrayLoop(array, n, value, i), i < n, array[i] != value),
+                SearchArrayLoop(array, n, value, i + 1),
+            ),
+        ),
+        ForAll(
+            [array, n, value, i],
+            Implies(
+                And(SearchArrayLoop(array, n, value, i), i < n, array[i] == value),
+                SearchArray(array, n, value, i),
+            ),
+        ),
+        ForAll(
+            [array, n, value, i],
+            Implies(
+                And(SearchArrayLoop(array, n, value, i), i >= n),
+                SearchArray(array, n, value, -1),
+            ),
+        ),
+        ForAll(
+            [array, n, value, res],
+            Implies(
+                And(
+                    SearchArray(array, n, value, res),
+                    res != -1,
+                    Or(res < 0, res >= n, array[res] != value),
+                ),
+                False,
+            ),
+        ),
+    ]
 
 
 def task_3_check(model, array: List[int], value: int, res: int) -> Optional[bool]:
-    return None
+    _array = K(IntSort(), IntVal(0))
+    for i, element in enumerate(array):
+        _array = Store(_array, IntVal(i), IntVal(element))
+    return evaluate(
+        model.eval(SearchArray(_array, IntVal(len(array)), IntVal(value), IntVal(res)))
+    )
 
 
 ##################################################
@@ -161,18 +275,56 @@ def recursive_simple(a: int, b: int) -> int:
         res = recursive_simple(a - 1, b - 2)
 
     if res < 17:
-        raise Exception("Res is not ok")
+        raise Exception("res is not ok")
 
     return res
 
 
+NoException = Function("NoException", IntSort(), IntSort(), BoolSort())
+RaiseException = Function("RaiseException", IntSort(), IntSort(), BoolSort())
+
+
 def task_4_chc():
-    return []
+    a, b = Ints("a b")
+    return [
+        ForAll(
+            [a, b], Implies(Or(a < 0, b < 0, And(a < b, a < 17)), RaiseException(a, b))
+        ),
+        ForAll(
+            [a, b],
+            Implies(
+                And(a >= 0, b >= 0, a > b, RaiseException(a - 1, b)),
+                RaiseException(a, b),
+            ),
+        ),
+        ForAll(
+            [a, b],
+            Implies(
+                And(a >= 0, b >= 0, a == b, RaiseException(a - 1, b - 2)),
+                RaiseException(a, b),
+            ),
+        ),
+        ForAll([a, b], Implies(And(a >= 17, b >= 0, a < b), NoException(a, b))),
+        ForAll(
+            [a, b],
+            Implies(
+                And(a >= 0, b >= 0, a > b, NoException(a - 1, b)), NoException(a, b)
+            ),
+        ),
+        ForAll(
+            [a, b],
+            Implies(
+                And(a >= 0, b >= 0, a == b, NoException(a - 1, b - 2)),
+                NoException(a, b),
+            ),
+        ),
+        ForAll([a, b], Implies(And(NoException(a, b), RaiseException(a, b)), False)),
+    ]
 
 
 def task_4_check(model, a: int, b: int) -> Optional[bool]:
     """Значение слабейшего предусловия на (a, b): True — исключения не будет."""
-    return None
+    return evaluate(model.eval(NoException(IntVal(a), IntVal(b))))
 
 
 ##################################################
@@ -181,5 +333,5 @@ if __name__ == "__main__":
     status, model = solve_horn(example_chc())
     print(status)
     print(model)
-    print(example_check(model, 50, 91))   # True: реальное исполнение
-    print(example_check(model, 50, 90))   # False: нарушает свойство
+    print(example_check(model, 50, 91))  # True: реальное исполнение
+    print(example_check(model, 50, 90))  # False: нарушает свойство
